@@ -1,162 +1,108 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
 
-# C extensions
-*.so
+import cv2
+import numpy as np
+import urllib.request
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
+ 
+url = 'http://192.168.43.246/cam-hi.jpg'
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+cred = credentials.Certificate(r"C:\Users\aymoo\Downloads/test.json")
+firebase_admin.initialize_app(cred, {'databaseURL': 'https://trolleytally-default-rtdb.europe-west1.firebasedatabase.app'})
+## firebase database refreence
+ref = db.reference("/")
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+objects = ["bottle","toothbrush","book"]
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
 
-# Translations
-*.mo
-*.pot
+ 
+cap = cv2.VideoCapture(url)
+whT=320
+confThreshold = 0.5
+nmsThreshold = 0.3
+classesfile='coco.names'
+classNames=[]
+with open(classesfile,'rt') as f:
+    classNames=f.read().rstrip('\n').split('\n')
+#print(classNames)
+ 
+modelConfig = 'yolov3.cfg'
+modelWeights= 'yolov3.weights'
+net = cv2.dnn.readNetFromDarknet(modelConfig,modelWeights)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def findObject(outputs,im):
+    hT,wT,cT = im.shape
+    bbox = []
+    classIds = []
+    confs = []
+    
+    for output in outputs:
+        for det in output:
+            scores = det[5:]
+            classId = np.argmax(scores)
+            confidence = scores[classId]
+            if confidence > confThreshold:
+                
+                w,h = int(det[2]*wT), int(det[3]*hT)
+                x,y = int((det[0]*wT)-w/2), int((det[1]*hT)-h/2)
+                bbox.append([x,y,w,h])
+                
+                classIds.append(int(classId))
+                confs.append(float(confidence))
+                
+    #print(len(bbox))
+    indices = cv2.dnn.NMSBoxes(bbox,confs,confThreshold,nmsThreshold)
 
-# Flask stuff:
-instance/
-.webassets-cache
+    print(indices)
+   
+    for i in indices:
+        box = bbox[i]
+        x,y,w,h = box[0],box[1],box[2],box[3]
 
-# Scrapy stuff:
-.scrapy
+        print(classNames[classIds[i]])
+        
 
-# Sphinx documentation
-docs/_build/
+        for j in objects:
+            if classNames[classIds[i]] == j:
+                cv2.rectangle(im,(x,y),(x+w,y+h),(255,0,255),2)
+                cv2.putText(im, f'{classNames[classIds[i]].upper()} {int(confs[i]*100)}%', (x,y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,255), 2)
+                print(i)
+                ref.child("cart1").child("detection").set(j)
+                ref.child("cart1").child("enableDetectingStatus").set(False)
+                break;
+               
+ 
+while True:
+    print(ref.child("cart1").child("enableDetectingStatus").get())
+    if(ref.child("cart1").child("enableDetectingStatus").get() == False):
+        continue
+    
+    img_resp=urllib.request.urlopen(url)
+    
+    imgnp=np.array(bytearray(img_resp.read()),dtype=np.uint8)
 
-# PyBuilder
-.pybuilder/
-target/
+    
+    im = cv2.imdecode(imgnp,-1)
+    
+    sucess, img= cap.read()
 
-# Jupyter Notebook
-.ipynb_checkpoints
+    print(sucess)
+    print(img)
+        
+    blob=cv2.dnn.blobFromImage(im,1/255,(whT,whT),[0,0,0],1,crop=False)
 
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+    
+    net.setInput(blob)
+    layernames=net.getLayerNames()
+    data = net.getUnconnectedOutLayers()
+    outputNames = [layernames[i-1] for i in net.getUnconnectedOutLayers()]
+    outputs = net.forward(outputNames)
+    
+    findObject(outputs,im)
+ 
+    cv2.imshow('IMage',im)
+    cv2.waitKey(1)
